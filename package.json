@@ -1,0 +1,20 @@
+{
+  "name": "nutrition-llama",
+  "version": "0.1.0",
+  "description": "Use llama\\'s structured output to generate data from images of nutrition facts tables",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node src/app.js"
+  },
+  "author": "John L. Carveth <jlcarveth@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^1.4.5-lts.1",
+    "node-llama-cpp": "^2.8.15",
+    "sharp": "^0.33.4",
+    "tesseract.js": "^5.1.0"
+  }
+}
