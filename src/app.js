@@ -10,6 +10,10 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import Tesseract from "tesseract.js";
+import cluster from "node:cluster";
+import os from "node:os";
+import fs from "node:fs";
+import https from "node:https";
 
 const app = express();
 
@@ -26,18 +30,80 @@ const upload = multer({ storage: multer.memoryStorage() });
 const nutritionSchema = {
   type: "object",
   properties: {
-    calories: {
-      type: "number",
+    servingSize: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["g", "ml"] },
+      },
+      required: ["value", "unit"],
     },
-    totalFat: { type: "number" },
-    carbohydrates: { type: "number" },
-    fiber: { type: "number" },
-    sugars: { type: "number" },
-    protein: { type: "number" },
-    cholesterol: { type: "number" },
-    sodium: { type: "number" },
+    calories: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["kcal"] },
+      },
+      required: ["value", "unit"],
+    },
+    totalFat: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["g"] },
+      },
+      required: ["value", "unit"],
+    },
+    carbohydrates: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["g"] },
+      },
+      required: ["value", "unit"],
+    },
+    fiber: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["g"] },
+      },
+      required: ["value", "unit"],
+    },
+    sugars: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["g"] },
+      },
+      required: ["value", "unit"],
+    },
+    protein: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["g"] },
+      },
+      required: ["value", "unit"],
+    },
+    cholesterol: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["mg"] },
+      },
+      required: ["value", "unit"],
+    },
+    sodium: {
+      type: "object",
+      properties: {
+        value: { type: "number" },
+        unit: { type: "string", enum: ["mg"] },
+      },
+      required: ["value", "unit"],
+    },
   },
-  required: ["calories", "totalFat", "protein", "carbohydrates"],
+  required: ["servingSize", "calories", "totalFat", "protein", "carbohydrates"],
 };
 
 const grammar = new LlamaJsonSchemaGrammar(nutritionSchema);
@@ -65,7 +131,8 @@ app.post("/analyze-nutrition", upload.single("image"), async (req, res) => {
     const truncatedText = text.slice(0, maxTextLength);
 
     // Prepare prompt for the model
-    const prompt = `Analyze the nutritional facts table in this text and provide the information in a structured format:\n${truncatedText}`;
+    const prompt =
+      `Analyze the nutritional facts table in this text and provide the information in a structured format:\n${truncatedText}`;
 
     const session = new LlamaChatSession({ context });
 
@@ -86,4 +153,37 @@ app.post("/analyze-nutrition", upload.single("image"), async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Now listening on ${PORT}`));
+if (cluster.isPrimary) {
+  const numCPUs = os.cpus().length;
+  console.log(
+    `Master ${process.pid} is running, ${numCPUs} threads available.`,
+  );
+
+  // Fork workers.
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+
+  cluster.on("exit", (worker, code, signal) => {
+    console.log(
+      `Worker ${worker.process.pid} died with code: ${code}, and signal: ${signal}`,
+    );
+    console.log("Starting a new worker");
+    cluster.fork();
+  });
+} else {
+  if (process.env.NODE_ENV === "development") {
+    const options = {
+      key: fs.readFileSync("localhost-key.pem"),
+      cert: fs.readFileSync("localhost.pem"),
+    };
+
+    https.createServer(options, app).listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } else {
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  }
+}
