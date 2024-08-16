@@ -19,9 +19,9 @@ const app = express();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const model = new LlamaModel({
-  modelPath: path.join(__dirname, "..", "models", "llama-2-7b-chat.Q4_0.gguf"),
-  contextSize: 2048, // Reduced context size
-  batchSize: 1024, // Increased batch size
+  modelPath: path.join(__dirname, "..", "models", "llama-2-7b-chat.Q2_K.gguf"),
+  contextSize: 1024, // Reduced context size
+  batchSize: 2048, // Increased batch size
 });
 
 // Set up multer for file uploads
@@ -109,26 +109,52 @@ const nutritionSchema = {
 const grammar = new LlamaJsonSchemaGrammar(nutritionSchema);
 const context = new LlamaContext({ model });
 
+// Create Tesseract worker
+let worker;
+(async () => {
+  worker = await Tesseract.createWorker('eng', 1, { langPath: 'http://tessdata.projectnaptha.com/4.0.0_fast/eng.traineddata.gz'});
+})();
+
 app.post("/analyze-nutrition", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No image file uploaded" });
     }
 
+    const logTimings = process.env.LOG_TIMINGS === "true";
+
+    if (logTimings) console.time("Total Request Time");
+    if (logTimings) console.time("Image Processing Time");
+
     // Process the uploaded image
     const image = await sharp(req.file.buffer)
       .resize(800) // Resize for consistency
       .toBuffer();
 
-    if (!image) console.error(`No image...`);
+    if (!image) {
+      console.error("No image...");
+      return res.status(500).json({ error: "Image processing failed" });
+    }
 
-    // Use Tesseract.js to extract text from the image
-    const { data: { text } } = await Tesseract.recognize(image, "eng");
+    if (logTimings) console.timeEnd("Image Processing Time");
+    if (logTimings) console.time("OCR Time");
+
+    // Use worker.recognize instead of Tesseract.recognize
+    const { data: { text } } = await worker.recognize(image, {
+      tessedit_pageseg_mode: '6',
+      tessedit_ocr_engine_mode: '1', // This is equivalent to OEM_LSTM_ONLY
+    });
     console.log(text);
+
+    if (logTimings) console.timeEnd("OCR Time");
+    if (logTimings) console.time("Text Truncation Time");
 
     // Truncate or split the extracted text if it's too long
     const maxTextLength = 1000; // Adjust this value based on your model's capacity
     const truncatedText = text.slice(0, maxTextLength);
+
+    if (logTimings) console.timeEnd("Text Truncation Time");
+    if (logTimings) console.time("Model Inference Time");
 
     // Prepare prompt for the model
     const prompt =
@@ -144,6 +170,10 @@ app.post("/analyze-nutrition", upload.single("image"), async (req, res) => {
 
     console.log(JSON.stringify(result));
     const parsedResult = grammar.parse(result);
+
+    if (logTimings) console.timeEnd("Model Inference Time");
+    if (logTimings) console.timeEnd("Total Request Time");
+
     // Send the structured output as JSON response
     res.json(parsedResult);
   } catch (error) {
@@ -174,8 +204,8 @@ if (cluster.isPrimary) {
 } else {
   if (process.env.NODE_ENV === "development") {
     const options = {
-      key: fs.readFileSync("localhost-key.pem"),
-      cert: fs.readFileSync("localhost.pem"),
+      key: fs.readFileSync(process.env.SSL_KEY_PATH),
+      cert: fs.readFileSync(process.env.SSL_CERT_PATH),
     };
 
     https.createServer(options, app).listen(PORT, () => {
@@ -187,3 +217,11 @@ if (cluster.isPrimary) {
     });
   }
 }
+
+// Properly terminate the Tesseract worker when shutting down
+process.on('SIGINT', async () => {
+  if (worker) {
+    await worker.terminate();
+  }
+  process.exit(0);
+});
