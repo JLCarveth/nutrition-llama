@@ -19,7 +19,7 @@ const app = express();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const model = new LlamaModel({
-  modelPath: path.join(__dirname, "..", "models", "llama-2-7b-chat.Q2_K.gguf"),
+  modelPath: path.join(__dirname, "..", "models", "rocket-3b.Q2_K.gguf"),
   contextSize: 1024, // Reduced context size
   batchSize: 2048, // Increased batch size
 });
@@ -112,8 +112,14 @@ const context = new LlamaContext({ model });
 // Create Tesseract worker
 let worker;
 (async () => {
-  worker = await Tesseract.createWorker('eng', 1, { langPath: 'http://tessdata.projectnaptha.com/4.0.0_fast/eng.traineddata.gz'});
+  worker = await Tesseract.createWorker("eng", 1, {
+    langPath: "http://tessdata.projectnaptha.com/4.0.0_fast/eng.traineddata.gz",
+  });
 })();
+
+app.get("/version", (req, res) => {
+  return res.json({ version: process.env["npm_package_version"] });
+});
 
 app.post("/analyze-nutrition", upload.single("image"), async (req, res) => {
   try {
@@ -141,8 +147,8 @@ app.post("/analyze-nutrition", upload.single("image"), async (req, res) => {
 
     // Use worker.recognize instead of Tesseract.recognize
     const { data: { text } } = await worker.recognize(image, {
-      tessedit_pageseg_mode: '6',
-      tessedit_ocr_engine_mode: '1', // This is equivalent to OEM_LSTM_ONLY
+      tessedit_pageseg_mode: "6",
+      tessedit_ocr_engine_mode: "1", // This is equivalent to OEM_LSTM_ONLY
     });
     console.log(text);
 
@@ -219,7 +225,7 @@ if (cluster.isPrimary) {
 }
 
 // Properly terminate the Tesseract worker when shutting down
-process.on('SIGINT', async () => {
+process.on("SIGINT", async () => {
   if (worker) {
     await worker.terminate();
   }
