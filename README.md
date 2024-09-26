@@ -67,3 +67,4 @@ Create a `.env` file in the project root and configure the necessary variables:
 Tesseract.js for OCR processing.  
 
 node-llama-cpp (and llama-cpp, of course!) for integrating LLaMA-based models.
+Meta for all of their wonderful, open work with the LLama models.
